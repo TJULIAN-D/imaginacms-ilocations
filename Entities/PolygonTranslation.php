@@ -7,11 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 class PolygonTranslation extends Model
 {
     public $timestamps = false;
-
     protected $fillable = [
         'name',
-        'description',
+        'description'
     ];
-
     protected $table = 'ilocations__polygon_translations';
 }

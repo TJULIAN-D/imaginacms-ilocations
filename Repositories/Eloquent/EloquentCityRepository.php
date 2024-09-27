@@ -2,227 +2,127 @@
 
 namespace Modules\Ilocations\Repositories\Eloquent;
 
-use Modules\Core\Repositories\Eloquent\EloquentBaseRepository;
 use Modules\Ilocations\Repositories\CityRepository;
+use Modules\Core\Icrud\Repositories\Eloquent\EloquentCrudRepository;
 
-class EloquentCityRepository extends EloquentBaseRepository implements CityRepository
+class EloquentCityRepository extends EloquentCrudRepository implements CityRepository
 {
-    public function index($page, $take, $filter, $include, $fields)
-    {
-        //Initialize Query
-        $query = $this->model->query();
+  /**
+   * Filter names to replace
+   * @var array
+   */
+  protected $replaceFilters = ['provinceId'];
 
-        /*== FILTER ==*/
-        if ($filter) {
-            /**
-             * @deprecated Use $filter->country or $filter->province instead
-             */
-            if (isset($filter->country_id)) {
-                $query->where('country_id', $filter->country_id);
-            }
-            if (isset($filter->province_id)) {
-                $query->where('province_id', $filter->province_id);
-            }
-            if (isset($filter->country)) {
-                $query->where('country_id', $filter->country);
-            }
-            if (isset($filter->province)) {
-                $query->where('province_id', $filter->province);
-            }
-        }
+  /**
+   * Relation names to replace
+   * @var array
+   */
+  protected $replaceSyncModelRelations = [];
 
-        /*== RELATIONSHIPS ==*/
-        //Include relationships for default
-        $includeDefault = [];
-        $query->with(array_merge($includeDefault, $include));
+  /**
+   * Attribute to define default relations
+   * all apply to index and show
+   * index apply in the getItemsBy
+   * show apply in the getItem
+   * @var array
+   */
+  protected $with = [/*all => [] ,index => [],show => []*/];
 
-        /*== FIELDS ==*/
-        $defaultFields = ['id'];
-        $query->select(array_merge($defaultFields, $fields));
+  /**
+   * Filter query
+   *
+   * @param $query
+   * @param $filter
+   * @param $params
+   * @return mixed
+   */
+  public function filterQuery($query, $filter, $params)
+  {
 
-        //Return request with pagination
-        if ($page) {
-            $take ? true : $take = 12; //If no specific take, query take 12 for default
+    /**
+     * Note: Add filter name to replaceFilters attribute before replace it
+     *
+     * Example filter Query
+     * if (isset($filter->status)) $query->where('status', $filter->status);
+     *
+     */
+    if (isset($filter->province))
+      $query->where("province_id", $filter->province);
 
-            return $query->paginate($take);
-        }
-
-        //Return request without pagination
-        if (! $page) {
-            $take ? $query->take($take) : false; //if request to take a limit
-
-            return $query->get()->sortBy('name');
-        }
+     //add filter by search
+    if (isset($filter->search)) {
+      //find search in columns
+      $query->where(function ($query) use ($filter) {
+        $query->whereHas('translations', function ($q) use ($filter) {
+          $q->where('name', 'like', '%' . $filter->search . '%');
+        })->orWhere('id', 'like', '%' . $filter->search . '%');
+      });
     }
 
-    public function getItemsBy($params = false)
-    {
-        /*== initialize query ==*/
-        $query = $this->model->query();
+    $availableCountries = json_decode(setting("ilocations::availableCountries", null, "[]"));
+    /*=== SETTINGS ===*/
+    if (!empty($availableCountries) && !isset($params->filter->indexAll)) {
+      if (!isset($params->permissions['ilocations.cities.manage']) || (!$params->permissions['ilocations.cities.manage'])) {
+        $query->whereHas("country", function ($query) use ($availableCountries){
+          $query->whereIn("ilocations__countries.iso_2",$availableCountries);
+        });
 
-        /*== RELATIONSHIPS ==*/
-        if (in_array('*', $params->include ?? [])) {//If Request all relationships
-            $query->with(['province', 'country', 'translations']);
-        } else {//Especific relationships
-            $includeDefault = ['translations']; //Default relationships
-            if (isset($params->include)) {//merge relations with default relationships
-                $includeDefault = array_merge($includeDefault, $params->include);
-            }
-            $query->with($includeDefault); //Add Relationships to query
-        }
-
-        /*== FILTERS ==*/
-        if (isset($params->filter)) {
-            $filter = $params->filter; //Short filter
-
-            //filter by Id
-            if (isset($filter->id)) {
-                $query->whereIn('id', (array) $filter->id);
-            }
-
-            //add filter by search
-            if (isset($filter->search)) {
-                //find search in columns
-                $query->where(function ($query) use ($filter) {
-                    $query->whereHas('translations', function ($q) use ($filter) {
-                        $q->where('name', 'like', '%'.$filter->search.'%');
-                    })->orWhere('id', 'like', '%'.$filter->search.'%');
-                });
-            }
-
-            /**
-             * @deprecated Use $filter->countryId or $filter->provinceId instead
-             */
-            if (isset($filter->country_id)) {
-                $query->where('country_id', $filter->country_id);
-            }
-            if (isset($filter->province_id)) {
-                $query->where('province_id', $filter->province_id);
-            }
-
-            if (isset($filter->countryId)) {
-                $query->where('country_id', $filter->countryId);
-            }
-            if (isset($filter->provinceId)) {
-                $query->where('province_id', $filter->provinceId);
-            }
-
-            if (isset($filter->country)) {
-                $query->where('country_id', $filter->country);
-            }
-            if (isset($filter->province)) {
-                $query->where('province_id', $filter->province);
-            }
-
-            //Filter by date
-            if (isset($filter->date)) {
-                $date = $filter->date; //Short filter date
-                $date->field = $date->field ?? 'created_at';
-                if (isset($date->from)) {//From a date
-                    $query->whereDate($date->field, '>=', $date->from);
-                }
-                if (isset($date->to)) {//to a date
-                    $query->whereDate($date->field, '<=', $date->to);
-                }
-            }
-
-            // ORDER
-            if (isset($filter->order) && $filter->order) {
-                $order = is_array($filter->order) ? $filter->order : [$filter->order];
-
-                foreach ($order as $orderObject) {
-                    if (isset($orderObject->field) && isset($orderObject->way)) {
-                        if (in_array($orderObject->field, $this->model->translatedAttributes)) {
-                            $query->orderByTranslation($orderObject->field, $orderObject->way);
-                        } else {
-                            $query->orderBy($orderObject->field, $orderObject->way);
-                        }
-                    }
-                }
-            }
-        }
-
-        $availableCountries = json_decode(setting('ilocations::availableCountries', null, '[]'));
-        /*=== SETTINGS ===*/
-        if (! empty($availableCountries) && ! isset($params->filter->indexAll)) {
-            if (! isset($params->permissions['ilocations.cities.manage']) || (! $params->permissions['ilocations.cities.manage'])) {
-                $query->whereHas('country', function ($query) use ($availableCountries) {
-                    $query->whereIn('ilocations__countries.iso_2', $availableCountries);
-                });
-            }
-        }
-
-        $availableProvinces = json_decode(setting('ilocations::availableProvinces', null, '[]'));
-
-        /*=== SETTINGS ===*/
-        if (! empty($availableProvinces) && ! isset($params->filter->indexAll)) {
-            if (! isset($params->permissions['ilocations.cities.manage']) || (! $params->permissions['ilocations.cities.manage'])) {
-                $query->whereHas('province', function ($query) use ($availableProvinces) {
-                    $query->whereIn('ilocations__provinces.iso_2', $availableProvinces);
-                });
-            }
-        }
-
-        $availableCities = json_decode(setting('ilocations::availableCities', null, '[]'));
-
-        /*=== SETTINGS ===*/
-        if (! empty($availableCities) && ! isset($params->filter->indexAll)) {
-            if (! isset($params->permissions['ilocations.cities.manage']) || (! $params->permissions['ilocations.cities.manage'])) {
-                $query->whereIn('ilocations__cities.id', $availableCities);
-            }
-        }
-
-        /*== FIELDS ==*/
-        if (isset($params->fields) && count($params->fields)) {
-            $query->select($params->fields);
-        }
-
-        /*== REQUEST ==*/
-        if (isset($params->page) && $params->page) {
-            return $query->paginate($params->take);
-        } else {
-            isset($params->take) && $params->take ? $query->take($params->take) : false; //Take
-
-            return $query->get();
-        }
+      }
     }
 
-    public function getItem($criteria, $params = false)
-    {
-        //Initialize query
-        $query = $this->model->query();
+    $availableProvinces = json_decode(setting("ilocations::availableProvinces", null, "[]"));
+    /*=== SETTINGS ===*/
+    if (!empty($availableProvinces) && !isset($params->filter->indexAll)) {
+      if (!isset($params->permissions['ilocations.cities.manage']) || (!$params->permissions['ilocations.cities.manage'])) {
+        $query->whereHas("province", function ($query) use ($availableProvinces){
+          $query->whereIn("ilocations__provinces.iso_2",$availableProvinces);
+        });
 
-        /*== RELATIONSHIPS ==*/
-        if (in_array('*', $params->include)) {//If Request all relationships
-            $query->with(['province', 'country', 'translations']);
-        } else {//Especific relationships
-            $includeDefault = []; //Default relationships
-            if (isset($params->include)) {//merge relations with default relationships
-                $includeDefault = array_merge($includeDefault, $params->include);
-            }
-            $query->with($includeDefault); //Add Relationships to query
-        }
-
-        /*== FILTER ==*/
-        if (isset($params->filter)) {
-            $filter = $params->filter;
-
-            if (isset($filter->field)) {//Filter by specific field
-                $field = $filter->field;
-            }
-        }
-
-        /*== FIELDS ==*/
-        if (isset($params->fields) && count($params->fields)) {
-            $query->select($params->fields);
-        }
-
-        /*== REQUEST ==*/
-        return $query->where($field ?? 'id', $criteria)->first();
+      }
     }
 
-    public function whereByCountry($id)
-    {
-        return $this->model->where('country_id', $id)->get();
+    $availableCities = json_decode(setting("ilocations::availableCities", null, "[]"));
+    /*=== SETTINGS ===*/
+    if (!empty($availableCities) && !isset($params->filter->indexAll)) {
+      if (!isset($params->permissions['ilocations.cities.manage']) || (!$params->permissions['ilocations.cities.manage'])) {
+
+        $query->whereIn('ilocations__cities.id', $availableCities);
+
+      }
     }
+
+    //Response
+    return $query;
+  }
+
+  /**
+   * Method to sync Model Relations
+   *
+   * @param $model ,$data
+   * @return $model
+   */
+  public function syncModelRelations($model, $data)
+  {
+    //Get model relations data from attribute of model
+    $modelRelationsData = ($model->modelRelations ?? []);
+
+    /**
+     * Note: Add relation name to replaceSyncModelRelations attribute before replace it
+     *
+     * Example to sync relations
+     * if (array_key_exists(<relationName>, $data)){
+     *    $model->setRelation(<relationName>, $model-><relationName>()->sync($data[<relationName>]));
+     * }
+     *
+     */
+
+    //Response
+    return $model;
+  }
+
+  public function whereByCountry($id)
+  {
+    return $this->model->where('country_id', $id)->get();
+  }
+  
 }

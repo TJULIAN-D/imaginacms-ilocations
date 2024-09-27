@@ -9,9 +9,9 @@ class CreateNeighborhoodRequest extends BaseFormRequest
     public function rules()
     {
         return [
-            'province_id' => 'required',
-            'country_id' => 'required',
-            'city_id' => 'required',
+          'province_id' => 'required',
+          'country_id' => 'required',
+          'city_id' => 'required',
         ];
     }
 
@@ -36,4 +36,9 @@ class CreateNeighborhoodRequest extends BaseFormRequest
     {
         return [];
     }
+
+    public function getValidator(){
+        return $this->getValidatorInstance();
+    }
+    
 }
