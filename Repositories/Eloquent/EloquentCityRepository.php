@@ -46,8 +46,9 @@ class EloquentCityRepository extends EloquentCrudRepository implements CityRepos
      * if (isset($filter->status)) $query->where('status', $filter->status);
      *
      */
-    if (isset($filter->province))
-      $query->where("province_id", $filter->province);
+    if (isset($filter->province) || isset($filter->provinceId)) {
+      $query->where("province_id", $filter->province ?? $filter->provinceId);
+    }
 
      //add filter by search
     if (isset($filter->search)) {
